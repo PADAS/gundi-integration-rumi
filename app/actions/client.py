@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 state_manager = IntegrationStateManager()
 
 
-class FarmResponse(pydantic.BaseModel):
+class Farm(pydantic.BaseModel):
     id: str = pydantic.Field(alias='_id')
     name: str
     nif: Optional[str]
@@ -21,11 +21,16 @@ class FarmResponse(pydantic.BaseModel):
         allow_population_by_field_name = True
 
 
-class FarmLocationResponse(pydantic.BaseModel):
-    location: str = pydantic.Field(alias='_location')
+class FarmLocation(pydantic.BaseModel):
+    location: tuple[float, float] = pydantic.Field(alias='_location')
     time: str = pydantic.Field(alias='_time')
     device_name: str
     official_tag: str
+
+    @pydantic.validator('location', pre=True, always=True)
+    def split_location(cls, v):
+        lat, lon = v.split("::")
+        return float(lat), float(lon)
 
     class Config:
         allow_population_by_field_name = True
@@ -61,7 +66,7 @@ async def get_farms(integration, base_url, auth):
             response.raise_for_status()
             parsed_response = response.json()
             if parsed_response:
-                return [FarmResponse.parse_obj(item) for item in parsed_response]
+                return [Farm.parse_obj(item) for item in parsed_response]
             else:
                 return response.text
         except httpx.HTTPStatusError as e:
@@ -92,7 +97,7 @@ async def get_farm_observations(integration, base_url, config):
             response.raise_for_status()
             parsed_response = response.json()
             if parsed_response:
-                obs = [FarmLocationResponse.parse_obj(ob) for ob in parsed_response]
+                obs = [FarmLocation.parse_obj(ob) for ob in parsed_response]
                 return obs
             else:
                 return response.text

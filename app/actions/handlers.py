@@ -19,7 +19,6 @@ RUMI_BASE_URL = "https://innogando-backend-prod-01.innogando.com"
 
 
 def transform(farm, observation):
-    lat_lon = observation.location.split("::")
     return {
         "source_name": observation.device_name,
         "source": observation.official_tag,
@@ -27,8 +26,8 @@ def transform(farm, observation):
         "subject_type": "vehicle",
         "recorded_at": observation.time,
         "location": {
-            "lat": float(lat_lon[0]),
-            "lon": float(lat_lon[1])
+            "lat": observation.location[0],
+            "lon": observation.location[1]
         },
         "additional": {
             "farm_id": farm.farm_id,
