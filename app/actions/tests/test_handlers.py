@@ -63,24 +63,42 @@ async def test_action_pull_observations_triggers_fetch_farm_observations_action(
     assert result == {"farms_triggered": 1}
 
 @pytest.mark.asyncio
-async def test_action_pull_observations_no_farms(mocker):
-    integration = mocker.Mock()
-    action_config = mocker.Mock(spec=PullObservationsConfig)
-    auth_config = mocker.Mock()
-    mocker.patch('app.actions.handlers.get_auth_config', return_value=auth_config)
+async def test_action_pull_observations_no_farms(mocker, integration_v2, mock_publish_event):
     mocker.patch('app.actions.client.get_farms', return_value=[])
+    mocker.patch("app.services.state.IntegrationStateManager.get_state", return_value=None)
+    mocker.patch("app.services.activity_logger.publish_event", mock_publish_event)
+    mocker.patch("app.services.action_runner.publish_event", mock_publish_event)
+    mocker.patch("app.services.action_scheduler.trigger_action", return_value=None)
+    mocker.patch("app.services.action_scheduler.publish_event", mock_publish_event)
+    mocker.patch("app.services.action_runner.execute_action", return_value=None)
+
+    integration = integration_v2
+
+    # Modify auth config
+    integration.configurations[2].data = {"user_id": "user", "token": "faketoken123"}
+
+    action_config = PullObservationsConfig(default_lookback_days=5)
 
     result = await action_pull_observations(integration, action_config)
 
     assert result == {"farms_triggered": 0}
 
 @pytest.mark.asyncio
-async def test_action_pull_observations_unauthorized(mocker):
-    integration = mocker.Mock()
-    action_config = mocker.Mock(spec=PullObservationsConfig)
-    auth_config = mocker.Mock()
-    mocker.patch('app.actions.handlers.get_auth_config', return_value=auth_config)
+async def test_action_pull_observations_unauthorized(mocker, integration_v2, mock_publish_event):
     mocker.patch('app.actions.client.get_farms', side_effect=RumiUnauthorizedException(Exception(), "Unauthorized access"))
+    mocker.patch("app.services.state.IntegrationStateManager.get_state", return_value=None)
+    mocker.patch("app.services.activity_logger.publish_event", mock_publish_event)
+    mocker.patch("app.services.action_runner.publish_event", mock_publish_event)
+    mocker.patch("app.services.action_scheduler.trigger_action", return_value=None)
+    mocker.patch("app.services.action_scheduler.publish_event", mock_publish_event)
+    mocker.patch("app.services.action_runner.execute_action", return_value=None)
+
+    integration = integration_v2
+
+    # Modify auth config
+    integration.configurations[2].data = {"user_id": "user", "token": "faketoken123"}
+
+    action_config = PullObservationsConfig(default_lookback_days=5)
 
     with pytest.raises(RumiUnauthorizedException):
         await action_pull_observations(integration, action_config)
