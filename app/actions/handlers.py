@@ -77,20 +77,18 @@ async def action_pull_observations(integration, action_config: PullObservationsC
                 )
                 if not device_state:
                     logger.info(f"Setting initial lookback days for device {farm.id} to {action_config.default_lookback_days}")
-                    start = (now - timedelta(days=action_config.default_lookback_days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+                    start = (now - timedelta(days=action_config.default_lookback_days)).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
                 else:
                     logger.info(f"Setting begin time for device {farm.id} to {device_state.get('updated_at')}")
                     start = device_state.get("updated_at")
 
-                config = {
-                    "start": start,
-                    "stop": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    "farm_id": farm.id,
-                    "farm_name": farm.name,
-                    "user_id": auth_config.user_id,
-                    "token": auth_config.token.get_secret_value(),
-                }
-                parsed_config = PullFarmObservationsConfig.parse_obj(config)
+                parsed_config = PullFarmObservationsConfig(
+                    start=start,
+                    farm_id=farm.id,
+                    farm_name=farm.name,
+                    user_id=auth_config.user_id,
+                    token=auth_config.token.get_secret_value()
+                )
                 await trigger_action(integration.id, "fetch_farm_observations", config=parsed_config)
                 farms_triggered += 1
             return {"farms_triggered": farms_triggered}
@@ -127,7 +125,7 @@ async def action_fetch_farm_observations(integration, action_config: PullFarmObs
 
             # Save latest device updated_at
             latest_time = max(observations, key=lambda obs: obs.time).time
-            state = {"updated_at": latest_time}
+            state = {"updated_at": latest_time.strftime("%Y-%m-%dT%H:%M:%S.%fZ")}
 
             await state_manager.set_state(
                 integration_id=integration.id,

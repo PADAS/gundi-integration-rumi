@@ -3,6 +3,7 @@ import httpx
 import pydantic
 import stamina
 
+from datetime import datetime, timezone
 from typing import Optional
 from app.services.state import IntegrationStateManager
 
@@ -23,9 +24,13 @@ class Farm(pydantic.BaseModel):
 
 class FarmLocation(pydantic.BaseModel):
     location: tuple[float, float] = pydantic.Field(alias='_location')
-    time: str = pydantic.Field(alias='_time')
+    time: datetime = pydantic.Field(alias='_time')
     device_name: str
     official_tag: str
+
+    @pydantic.validator('time', pre=True, always=True)
+    def parse_time_string(cls, v):
+        return datetime.strptime(v, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
 
     @pydantic.validator('location', pre=True, always=True)
     def split_location(cls, v):
@@ -82,8 +87,8 @@ async def get_farm_observations(integration, base_url, config):
     async with httpx.AsyncClient(timeout=120) as session:
         url = f"{base_url}/farms/{config.farm_id}/rumi/location/history"
         params = {
-            "start": config.start,
-            "stop": config.stop,
+            "start": config.start.isoformat(),
+            "stop": config.stop.isoformat(),
             "locations": config.locations,
             "user_id": config.user_id,
         }
