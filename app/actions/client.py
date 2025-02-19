@@ -28,9 +28,11 @@ class FarmLocation(pydantic.BaseModel):
     device_name: str
     official_tag: str
 
-    @pydantic.validator('time', pre=True, always=True)
+    @pydantic.validator('time', always=True)
     def parse_time_string(cls, v):
-        return datetime.strptime(v, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
+        if not v.tzinfo:
+            return v.replace(tzinfo=timezone.utc)
+        return v
 
     @pydantic.validator('location', pre=True, always=True)
     def split_location(cls, v):

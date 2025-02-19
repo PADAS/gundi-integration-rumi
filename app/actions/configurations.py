@@ -40,11 +40,11 @@ class PullFarmObservationsConfig(PullActionConfiguration):
     user_id: str
     token: str
 
-    @pydantic.validator('start', pre=True, always=True)
+    @pydantic.validator('start', always=True)
     def parse_time_string(cls, v):
-        if isinstance(v, datetime):
-            return v
-        return datetime.strptime(v, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
+        if not v.tzinfo:
+            return v.replace(tzinfo=timezone.utc)
+        return v
 
 
 def get_auth_config(integration):
