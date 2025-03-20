@@ -20,12 +20,13 @@ class IntegrationStateManager:
         value = json.loads(json_value) if json_value else {}
         return value
 
-    async def set_state(self, integration_id: str, action_id: str, state: dict, source_id: str = "no-source"):
+    async def set_state(self, integration_id: str, action_id: str, state: dict, source_id: str = "no-source", expire: int = None):
         for attempt in stamina.retry_context(on=redis.RedisError, attempts=5, wait_initial=1.0, wait_max=30, wait_jitter=3.0):
             with attempt:
                 await self.db_client.set(
                     f"integration_state.{integration_id}.{action_id}.{source_id}",
-                    json.dumps(state, default=str)
+                    json.dumps(state, default=str),
+                    ex=expire
                 )
 
     async def delete_state(self, integration_id: str, action_id: str, source_id: str = "no-source"):

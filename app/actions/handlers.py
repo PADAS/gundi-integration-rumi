@@ -59,6 +59,32 @@ def transform(farm, animals_info, observation):
     }
 
 
+async def get_animals_info(integration, base_url, action_config):
+    try:
+        animals_info = await state_manager.get_state(
+            integration_id=integration.id,
+            action_id="fetch_farm_observations",
+            source_id=action_config.farm_id
+        )
+        if not animals_info:
+            animals_info = await client.get_animals_info(integration, base_url, action_config)
+
+            # Save animals info dict in state for 12 hours
+            await state_manager.set_state(
+                integration_id=str(integration.id),
+                action_id="fetch_farm_observations",
+                state=animals_info,
+                source_id=action_config.farm_id,
+                expire=43200 # 12 hrs
+            )
+            return animals_info
+
+        return animals_info
+    except httpx.HTTPStatusError as e:
+        logger.exception(f"Failed to get animals info for integration {integration.id} using {action_config}. Exception: {e}")
+        raise e
+
+
 async def action_auth(integration, action_config: AuthenticateConfig):
     logger.info(f"Executing 'auth' action with integration ID {integration.id} and action_config {action_config}...")
 
@@ -139,7 +165,7 @@ async def action_fetch_farm_observations(integration, action_config: PullFarmObs
         observations = await client.get_farm_observations(integration, base_url, action_config)
         if observations:
             logger.info(f"Extracted {len(observations)} observations for farm {action_config.farm_id}")
-            animals_info = await client.get_animals_info(integration, base_url, action_config)
+            animals_info = await get_animals_info(integration, base_url, action_config)
             transformed_data = [transform(action_config, animals_info, ob) for ob in observations]
 
             for i, batch in enumerate(generate_batches(transformed_data, 200)):
