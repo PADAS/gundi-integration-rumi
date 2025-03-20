@@ -114,3 +114,57 @@ async def get_farm_observations(integration, base_url, config):
             elif e.response.status_code == 404:
                 raise RumiNotFoundException(e, "User not found")
             raise e
+
+
+@stamina.retry(on=httpx.HTTPError, wait_initial=4.0, wait_jitter=5.0, wait_max=32.0)
+async def get_animals_info(integration, base_url, config):
+    animals_dict = {}
+    async with httpx.AsyncClient(timeout=120) as session:
+        try:
+            params = {
+                "user_id": config.user_id
+            }
+
+            bulls_url = f"{base_url}/farms/{config.farm_id}/bulls"
+
+            logger.info(f"-- Getting bulls info for integration ID: {integration.id} Farm: {config.farm_id} --")
+
+            bulls_response = await session.get(bulls_url, params=params, headers={"Authorization": f"Token {config.token}"})
+            if bulls_response.is_error:
+                logger.error(f"Error in bulls 'get_animals_info'. Response body: {bulls_response.text}")
+            bulls_response.raise_for_status()
+            parsed_response = bulls_response.json()
+            if parsed_response:
+                animals_dict["bull"] = parsed_response
+
+            cows_url = f"{base_url}/farms/{config.farm_id}/cows"
+
+            logger.info(f"-- Getting cows info for integration ID: {integration.id} Farm: {config.farm_id} --")
+
+            cows_response = await session.get(cows_url, params=params, headers={"Authorization": f"Token {config.token}"})
+            if cows_response.is_error:
+                logger.error(f"Error in cows 'get_animals_info'. Response body: {cows_response.text}")
+            cows_response.raise_for_status()
+            parsed_response = cows_response.json()
+            if parsed_response:
+                animals_dict["cow"] = parsed_response
+
+            calves_url = f"{base_url}/farms/{config.farm_id}/calves"
+
+            logger.info(f"-- Getting calves info for integration ID: {integration.id} Farm: {config.farm_id} --")
+
+            calves_response = await session.get(calves_url, params=params, headers={"Authorization": f"Token {config.token}"})
+            if calves_response.is_error:
+                logger.error(f"Error in calves 'get_animals_info'. Response body: {calves_response.text}")
+            calves_response.raise_for_status()
+            parsed_response = calves_response.json()
+            if parsed_response:
+                animals_dict["calf"] = parsed_response
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise RumiUnauthorizedException(e, "Unauthorized access")
+            elif e.response.status_code == 404:
+                raise RumiNotFoundException(e, "User not found")
+            raise e
+
+        return animals_dict
