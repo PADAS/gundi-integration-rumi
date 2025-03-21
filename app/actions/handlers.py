@@ -18,12 +18,33 @@ state_manager = IntegrationStateManager()
 RUMI_BASE_URL = "https://innogando-backend-prod-01.innogando.com"
 
 
-def transform(farm, observation):
+def transform(farm, animals_info, observation):
+    rumi_id_map = {
+        animal["rumi_id"]: {"type": animal_type, **animal}
+        for animal_type, animal_type_info in animals_info.items()
+        for animal in animal_type_info
+    }
+
+    animal_info = rumi_id_map.get(observation.device_name, None)
+
+    source_name = (
+        f"{animal_info.get('name', observation.official_tag)} ({animal_info.get('rumi_id')})"
+       if animal_info
+       else
+       f"{observation.official_tag} ({observation.device_name})"
+    )
+
+    subject_type = f"rumi-{animal_info.get('type')}" if animal_info else "unassigned"
+
+    additional_info = {
+        key: value for key, value in (animal_info or {}).items() if value
+    }
+
     return {
-        "source_name": observation.device_name,
+        "source_name": source_name,
         "source": observation.official_tag,
         "type": "tracking-device",
-        "subject_type": "vehicle",
+        "subject_type": subject_type,
         "recorded_at": observation.time,
         "location": {
             "lat": observation.location[0],
@@ -31,9 +52,37 @@ def transform(farm, observation):
         },
         "additional": {
             "farm_id": farm.farm_id,
-            "farm_name": farm.farm_name
+            "farm_name": farm.farm_name,
+            "subject_name": source_name,
+            **additional_info
         }
     }
+
+
+async def get_animals_info(integration, base_url, action_config):
+    try:
+        animals_info = await state_manager.get_state(
+            integration_id=integration.id,
+            action_id="fetch_farm_observations",
+            source_id=action_config.farm_id
+        )
+        if not animals_info:
+            animals_info = await client.get_animals_info(integration, base_url, action_config)
+
+            # Save animals info dict in state for 12 hours
+            await state_manager.set_state(
+                integration_id=str(integration.id),
+                action_id="fetch_farm_observations",
+                state=animals_info,
+                source_id=action_config.farm_id,
+                expire=43200 # 12 hrs
+            )
+            return animals_info
+
+        return animals_info
+    except httpx.HTTPStatusError as e:
+        logger.exception(f"Failed to get animals info for integration {integration.id} using {action_config}. Exception: {e}")
+        raise e
 
 
 async def action_auth(integration, action_config: AuthenticateConfig):
@@ -116,7 +165,8 @@ async def action_fetch_farm_observations(integration, action_config: PullFarmObs
         observations = await client.get_farm_observations(integration, base_url, action_config)
         if observations:
             logger.info(f"Extracted {len(observations)} observations for farm {action_config.farm_id}")
-            transformed_data = [transform(action_config, ob) for ob in observations]
+            animals_info = await get_animals_info(integration, base_url, action_config)
+            transformed_data = [transform(action_config, animals_info, ob) for ob in observations]
 
             for i, batch in enumerate(generate_batches(transformed_data, 200)):
                 logger.info(f'Sending observations batch #{i}: {len(batch)} observations. Farm: {action_config.farm_id}')
