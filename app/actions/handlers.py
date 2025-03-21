@@ -34,7 +34,7 @@ def transform(farm, animals_info, observation):
        f"{observation.official_tag} ({observation.device_name})"
     )
 
-    subject_type = f"rumi-{animal_info.get('type')}" if animal_info else "tracking-device"
+    subject_type = f"rumi-{animal_info.get('type')}" if animal_info else "unassigned"
 
     additional_info = {
         key: value for key, value in (animal_info or {}).items() if value
@@ -43,8 +43,8 @@ def transform(farm, animals_info, observation):
     return {
         "source_name": source_name,
         "source": observation.official_tag,
-        "type": subject_type,
-        "subject_type": "unassigned",
+        "type": "tracking-device",
+        "subject_type": subject_type,
         "recorded_at": observation.time,
         "location": {
             "lat": observation.location[0],
