@@ -4,9 +4,10 @@ import logging
 import app.actions.client as client
 
 from datetime import datetime, timedelta, timezone
+from gundi_core.schemas.v2 import LogLevel
 from app.actions.configurations import AuthenticateConfig, PullObservationsConfig, PullFarmObservationsConfig, get_auth_config
 from app.services.action_scheduler import trigger_action
-from app.services.activity_logger import activity_logger
+from app.services.activity_logger import activity_logger, log_action_activity
 from app.services.gundi import send_observations_to_gundi
 from app.services.state import IntegrationStateManager
 from app.services.utils import generate_batches
@@ -18,45 +19,78 @@ state_manager = IntegrationStateManager()
 RUMI_BASE_URL = "https://innogando-backend-prod-01.innogando.com"
 
 
-def transform(farm, animals_info, observation):
+def is_valid_location(location):
+    if not isinstance(location, (list, tuple)) or len(location) != 2:
+        return False
+    lat, lon = location
+    if lat == 0 or lon == 0:
+        return False
+    return -90.0 <= lat <= 90.0 and -180.0 <= lon <= 360.0
+
+
+async def transform(integration_id, farm, animals_info, observations):
+    transformed_data = []
+
     rumi_id_map = {
         animal["rumi_id"]: {"type": animal_type, **animal}
         for animal_type, animal_type_info in animals_info.items()
         for animal in animal_type_info
     }
 
-    animal_info = rumi_id_map.get(observation.device_name, None)
+    for observation in observations:
+        if not is_valid_location(observation.location):
+            message = (
+                f"Invalid location for observation: {observation.dict()}. Farm: {farm.farm_name}."
+            )
+            await log_action_activity(
+                integration_id=integration_id,
+                action_id="pull_observations",
+                level=LogLevel.WARNING,
+                title="Observation discarded (bad location)",
+                data={"message": message}
+            )
+            continue
 
-    source_name = (
-        f"{animal_info.get('name', observation.official_tag)} ({animal_info.get('rumi_id')})"
-       if animal_info
-       else
-       f"{observation.official_tag} ({observation.device_name})"
-    )
+        animal_info = rumi_id_map.get(observation.device_name, None)
 
-    subject_type = f"rumi-{animal_info.get('type')}" if animal_info else "unassigned"
+        # check if official_tag is None, if so, use device_name
+        if not observation.official_tag:
+            observation.official_tag = observation.device_name
 
-    additional_info = {
-        key: value for key, value in (animal_info or {}).items() if value
-    }
+        source_name = (
+            f"{animal_info.get('name', observation.official_tag)} ({animal_info.get('rumi_id')})"
+           if animal_info
+           else
+           f"{observation.official_tag} ({observation.device_name})"
+        )
 
-    return {
-        "source_name": source_name,
-        "source": observation.official_tag,
-        "type": "tracking-device",
-        "subject_type": subject_type,
-        "recorded_at": observation.time,
-        "location": {
-            "lat": observation.location[0],
-            "lon": observation.location[1]
-        },
-        "additional": {
-            "farm_id": farm.farm_id,
-            "farm_name": farm.farm_name,
-            "subject_name": source_name,
-            **additional_info
+        subject_type = f"rumi-{animal_info.get('type')}" if animal_info else "unassigned"
+
+        additional_info = {
+            key: value for key, value in (animal_info or {}).items() if value
         }
-    }
+
+        transformed_data.append(
+            {
+                "source_name": source_name,
+                "source": observation.official_tag,
+                "type": "tracking-device",
+                "subject_type": subject_type,
+                "recorded_at": observation.time,
+                "location": {
+                    "lat": observation.location[0],
+                    "lon": observation.location[1]
+                },
+                "additional": {
+                    "farm_id": farm.farm_id,
+                    "farm_name": farm.farm_name,
+                    "subject_name": source_name,
+                    **additional_info
+                }
+            }
+        )
+
+    return transformed_data
 
 
 async def get_animals_info(integration, base_url, action_config):
@@ -166,7 +200,7 @@ async def action_fetch_farm_observations(integration, action_config: PullFarmObs
         if observations:
             logger.info(f"Extracted {len(observations)} observations for farm {action_config.farm_id}")
             animals_info = await get_animals_info(integration, base_url, action_config)
-            transformed_data = [transform(action_config, animals_info, ob) for ob in observations]
+            transformed_data = await transform(integration.id, action_config, animals_info, observations)
 
             for i, batch in enumerate(generate_batches(transformed_data, 200)):
                 logger.info(f'Sending observations batch #{i}: {len(batch)} observations. Farm: {action_config.farm_id}')
