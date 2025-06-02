@@ -51,7 +51,7 @@ async def transform(integration_id, farm, animals_info, observations):
             )
             continue
 
-        animal_info = rumi_id_map.get(observation.device_name, None)
+        animal_info = rumi_id_map.get(observation.device_name, {})
 
         # check if official_tag is None, if so, use device_name
         if not observation.official_tag:
