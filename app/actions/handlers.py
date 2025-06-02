@@ -67,7 +67,7 @@ async def transform(integration_id, farm, animals_info, observations):
         subject_type = f"rumi-{animal_info.get('type')}" if animal_info else "unassigned"
 
         additional_info = {
-            key: value for key, value in (animal_info or {}).items() if value
+            key: value for key, value in animal_info.items() if value
         }
 
         transformed_data.append(
