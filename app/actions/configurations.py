@@ -33,7 +33,7 @@ class PullObservationsConfig(PullActionConfiguration):
 
 class PullFarmObservationsConfig(PullActionConfiguration):
     start: datetime
-    stop: datetime = datetime.now(timezone.utc)
+    stop: datetime = pydantic.Field(..., default_factory=lambda: datetime.now(timezone.utc))
     locations: str = "all"
     farm_id: str
     farm_name: str
