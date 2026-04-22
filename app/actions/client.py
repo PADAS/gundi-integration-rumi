@@ -3,7 +3,7 @@ import httpx
 import pydantic
 import stamina
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from app.services.state import IntegrationStateManager
 
@@ -69,7 +69,7 @@ async def get_farms(integration, base_url, auth):
         try:
             response = await session.get(url, headers={"Authorization": f"Token {auth.token.get_secret_value()}"})
             if response.is_error:
-                logger.error(f"Error 'get_farms'. Response body: {response.text}")
+                logger.warning(f"Error 'get_farms'. Response body: {response.text}")
             response.raise_for_status()
             parsed_response = response.json()
             if parsed_response:
@@ -84,36 +84,54 @@ async def get_farms(integration, base_url, auth):
             raise e
 
 
+_TIMELAPSE_MAX_WINDOW = timedelta(hours=48)
+
+
 @stamina.retry(on=httpx.HTTPError, wait_initial=4.0, wait_jitter=5.0, wait_max=32.0)
 async def get_farm_observations(integration, base_url, config):
     async with httpx.AsyncClient(timeout=120) as session:
-        url = f"{base_url}/farms/{config.farm_id}/rumi/location/history"
-        params = {
-            "start": config.start.isoformat(),
-            "stop": config.stop.isoformat(),
-            "locations": config.locations,
-            "user_id": config.user_id,
-        }
+        all_observations = []
+        chunk_start = config.start
 
-        logger.info(f"-- Getting observations for integration ID: {integration.id} Farm: {config.farm_id} --")
+        while chunk_start < config.stop:
+            chunk_end = min(chunk_start + _TIMELAPSE_MAX_WINDOW, config.stop)
+            url = f"{base_url}/farms/{config.farm_id}/rumi/realtime/timelapse"
+            params = {
+                "start": chunk_start.isoformat(),
+                "stop": chunk_end.isoformat(),
+                "user_id": config.user_id,
+            }
 
-        try:
-            response = await session.get(url, params=params, headers={"Authorization": f"Token {config.token}"})
-            if response.is_error:
-                logger.error(f"Error 'get_farm_observations'. Response body: {response.text}")
-            response.raise_for_status()
-            parsed_response = response.json()
-            if parsed_response:
-                obs = [FarmLocation.parse_obj(ob) for ob in parsed_response]
-                return obs
-            else:
-                return response.text
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 401:
-                raise RumiUnauthorizedException(e, "Unauthorized access")
-            elif e.response.status_code == 404:
-                raise RumiNotFoundException(e, "User not found")
-            raise e
+            logger.info(
+                f"-- Getting observations for integration ID: {integration.id} "
+                f"Farm: {config.farm_id} [{chunk_start.isoformat()} → {chunk_end.isoformat()}] --"
+            )
+
+            try:
+                response = await session.get(url, params=params, headers={"Authorization": f"Token {config.token}"})
+                if response.is_error:
+                    logger.warning(f"Error 'get_farm_observations'. Response body: {response.text}")
+                response.raise_for_status()
+                parsed_response = response.json()
+                if parsed_response:
+                    for animal in parsed_response:
+                        for point in animal.get("locations", []):
+                            all_observations.append(FarmLocation.parse_obj({
+                                "_location": point.get("location"),
+                                "_time": point.get("_time"),
+                                "device_name": animal.get("rumi_id"),
+                                "official_tag": animal.get("official_tag"),
+                            }))
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 401:
+                    raise RumiUnauthorizedException(e, "Unauthorized access")
+                elif e.response.status_code == 404:
+                    raise RumiNotFoundException(e, "User not found")
+                raise e
+
+            chunk_start = chunk_end
+
+        return all_observations or None
 
 
 @stamina.retry(on=httpx.HTTPError, wait_initial=4.0, wait_jitter=5.0, wait_max=32.0)
@@ -131,7 +149,7 @@ async def get_animals_info(integration, base_url, config):
 
             bulls_response = await session.get(bulls_url, params=params, headers={"Authorization": f"Token {config.token}"})
             if bulls_response.is_error:
-                logger.error(f"Error in bulls 'get_animals_info'. Response body: {bulls_response.text}")
+                logger.warning(f"Error in bulls 'get_animals_info'. Response body: {bulls_response.text}")
             bulls_response.raise_for_status()
             parsed_response = bulls_response.json()
             if parsed_response:
@@ -143,7 +161,7 @@ async def get_animals_info(integration, base_url, config):
 
             cows_response = await session.get(cows_url, params=params, headers={"Authorization": f"Token {config.token}"})
             if cows_response.is_error:
-                logger.error(f"Error in cows 'get_animals_info'. Response body: {cows_response.text}")
+                logger.warning(f"Error in cows 'get_animals_info'. Response body: {cows_response.text}")
             cows_response.raise_for_status()
             parsed_response = cows_response.json()
             if parsed_response:
@@ -155,7 +173,7 @@ async def get_animals_info(integration, base_url, config):
 
             calves_response = await session.get(calves_url, params=params, headers={"Authorization": f"Token {config.token}"})
             if calves_response.is_error:
-                logger.error(f"Error in calves 'get_animals_info'. Response body: {calves_response.text}")
+                logger.warning(f"Error in calves 'get_animals_info'. Response body: {calves_response.text}")
             calves_response.raise_for_status()
             parsed_response = calves_response.json()
             if parsed_response:

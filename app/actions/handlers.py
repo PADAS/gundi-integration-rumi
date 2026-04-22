@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 state_manager = IntegrationStateManager()
 
 
-RUMI_BASE_URL = "https://innogando-backend-prod-01.innogando.com"
+RUMI_BASE_URL = "https://rumi-api.innogando.com/v1"
 
 
 def is_valid_location(location):
