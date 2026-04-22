@@ -76,7 +76,7 @@ async def transform(integration_id, farm, animals_info, observations):
                 "source": observation.official_tag,
                 "type": "tracking-device",
                 "subject_type": subject_type,
-                "recorded_at": observation.time + timedelta(seconds=1),
+                "recorded_at": observation.time,
                 "location": {
                     "lat": observation.location[0],
                     "lon": observation.location[1]
