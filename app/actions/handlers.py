@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 state_manager = IntegrationStateManager()
 
 
-RUMI_BASE_URL = "https://rumi-api.innogando.com"
+RUMI_BASE_URL = "https://rumi-api.innogando.com/v1"
 
 
 def is_valid_location(location):
@@ -76,7 +76,7 @@ async def transform(integration_id, farm, animals_info, observations):
                 "source": observation.official_tag,
                 "type": "tracking-device",
                 "subject_type": subject_type,
-                "recorded_at": observation.time,
+                "recorded_at": observation.time + timedelta(seconds=1),
                 "location": {
                     "lat": observation.location[0],
                     "lon": observation.location[1]

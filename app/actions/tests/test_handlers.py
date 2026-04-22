@@ -109,7 +109,7 @@ async def test_action_pull_observations_unauthorized(mocker, integration_v2, moc
 
 # --- action_fetch_farm_observations ---
 
-RUMI_BASE_URL = "https://rumi-api.innogando.com"
+RUMI_BASE_URL = "https://rumi-api.innogando.com/v1"
 
 MOCK_TIMELAPSE_RESPONSE = [
     {
