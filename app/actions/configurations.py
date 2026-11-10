@@ -37,7 +37,6 @@ class PullFarmObservationsConfig(InternalActionConfiguration):
     farm_id: str
     farm_name: str
     user_id: str
-    token: str
 
     @pydantic.validator('start', always=True)
     def parse_time_string(cls, v):

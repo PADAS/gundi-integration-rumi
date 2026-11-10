@@ -141,7 +141,6 @@ def farm_action_config():
         farm_id="farm123",
         farm_name="Test Farm",
         user_id="user123",
-        token="testtoken",
     )
 
 
@@ -155,6 +154,7 @@ async def test_action_fetch_farm_observations_success(mocker, integration_v2, mo
     mocker.patch("app.services.activity_logger.publish_event", mock_publish_event)
     mocker.patch("app.services.action_runner.publish_event", mock_publish_event)
 
+    integration_v2.configurations[2].data = {"user_id": "user123", "token": "testtoken"}
     result = await action_fetch_farm_observations(integration_v2, farm_action_config)
 
     assert result == {"observations_extracted": 2}
@@ -166,6 +166,7 @@ async def test_action_fetch_farm_observations_no_observations(mocker, integratio
     mocker.patch("app.services.activity_logger.publish_event", mock_publish_event)
     mocker.patch("app.services.action_runner.publish_event", mock_publish_event)
 
+    integration_v2.configurations[2].data = {"user_id": "user123", "token": "testtoken"}
     result = await action_fetch_farm_observations(integration_v2, farm_action_config)
 
     assert result == {"observations_extracted": 0}
@@ -182,14 +183,15 @@ async def test_get_farm_observations_chunks_long_window(mocker):
         farm_id="farm123",
         farm_name="Test Farm",
         user_id="user123",
-        token="testtoken",
     )
 
     with respx.mock:
         route = respx.get(f"{RUMI_BASE_URL}/farms/farm123/rumi/realtime/timelapse").mock(
             return_value=httpx.Response(200, json=MOCK_TIMELAPSE_RESPONSE)
         )
-        result = await get_farm_observations(integration, RUMI_BASE_URL, config)
+        result = await get_farm_observations(
+            integration, RUMI_BASE_URL, config, AuthenticateConfig(user_id="user123", token="testtoken")
+        )
 
     assert route.call_count == 2  # 3-day window → two 48h chunks
     assert len(result) == 4        # 2 locations per chunk × 2 chunks

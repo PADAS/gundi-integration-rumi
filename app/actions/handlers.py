@@ -93,7 +93,7 @@ async def transform(integration_id, farm, animals_info, observations):
     return transformed_data
 
 
-async def get_animals_info(integration, base_url, action_config):
+async def get_animals_info(integration, base_url, action_config, auth_config):
     try:
         animals_info = await state_manager.get_state(
             integration_id=integration.id,
@@ -101,7 +101,7 @@ async def get_animals_info(integration, base_url, action_config):
             source_id=action_config.farm_id
         )
         if not animals_info:
-            animals_info = await client.get_animals_info(integration, base_url, action_config)
+            animals_info = await client.get_animals_info(integration, base_url, action_config, auth_config)
 
             # Save animals info dict in state for 12 hours
             await state_manager.set_state(
@@ -170,7 +170,6 @@ async def action_pull_observations(integration, action_config: PullObservationsC
                     farm_id=farm.id,
                     farm_name=farm.name,
                     user_id=auth_config.user_id,
-                    token=auth_config.token.get_secret_value()
                 )
                 await trigger_action(integration.id, "fetch_farm_observations", config=parsed_config)
                 farms_triggered += 1
@@ -193,13 +192,17 @@ async def action_fetch_farm_observations(integration, action_config: PullFarmObs
     logger.info(f"Executing action 'fetch_farm_observations' for integration ID {integration.id} and action_config {action_config}...")
 
     base_url = integration.base_url or RUMI_BASE_URL
+    # The Rumi token is read from the integration's auth settings here rather
+    # than passed in the triggering message, so it never appears in Pub/Sub
+    # messages, logs or activity events.
+    auth_config = get_auth_config(integration)
     observations_extracted = 0
 
     try:
-        observations = await client.get_farm_observations(integration, base_url, action_config)
+        observations = await client.get_farm_observations(integration, base_url, action_config, auth_config)
         if observations:
             logger.info(f"Extracted {len(observations)} observations for farm {action_config.farm_id}")
-            animals_info = await get_animals_info(integration, base_url, action_config)
+            animals_info = await get_animals_info(integration, base_url, action_config, auth_config)
             transformed_data = await transform(integration.id, action_config, animals_info, observations)
 
             for i, batch in enumerate(generate_batches(transformed_data, 200)):

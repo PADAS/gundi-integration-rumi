@@ -33,12 +33,14 @@ def test_fetch_farm_observations_config_parses_triggered_overrides():
         farm_id="farm123",
         farm_name="Test Farm",
         user_id="user123",
-        token="testtoken",
     )
 
     parsed = PullFarmObservationsConfig.parse_obj(triggered.dict())
 
     assert parsed == triggered
+    # The Rumi token stays in the integration's auth settings, out of the
+    # triggering message (and so out of Pub/Sub, logs and activity events).
+    assert "token" not in triggered.dict()
     assert parsed.start == datetime(2026, 11, 9, 19, 0, tzinfo=timezone.utc)
     assert parsed.stop.tzinfo is not None
 
@@ -49,7 +51,6 @@ def test_fetch_farm_observations_config_treats_naive_start_as_utc():
         "farm_id": "farm123",
         "farm_name": "Test Farm",
         "user_id": "user123",
-        "token": "testtoken",
     })
 
     assert parsed.start == datetime(2026, 11, 9, 19, 0, tzinfo=timezone.utc)
@@ -62,6 +63,7 @@ async def test_triggered_fetch_farm_observations_runs_with_overrides_only(
     # The action has no stored configuration in Gundi; everything it needs
     # arrives in config_overrides from pull_observations.
     mock_config_manager.get_action_configuration.return_value = async_return(None)
+    integration_v2.configurations[2].data = {"user_id": "user123", "token": "testtoken"}
     mocker.patch("app.services.action_runner.config_manager", mock_config_manager)
     mocker.patch("app.services.activity_logger.publish_event", mock_publish_event)
     mocker.patch("app.services.action_runner.publish_event", mock_publish_event)
@@ -71,7 +73,6 @@ async def test_triggered_fetch_farm_observations_runs_with_overrides_only(
         farm_id="farm123",
         farm_name="Test Farm",
         user_id="user123",
-        token="testtoken",
     )
 
     result = await execute_action(
@@ -83,3 +84,4 @@ async def test_triggered_fetch_farm_observations_runs_with_overrides_only(
     assert result == {"observations_extracted": 0}
     get_observations.assert_called_once()
     assert get_observations.call_args.args[2].farm_id == "farm123"
+    assert get_observations.call_args.args[3].token.get_secret_value() == "testtoken"
