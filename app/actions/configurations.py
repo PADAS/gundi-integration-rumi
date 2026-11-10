@@ -1,7 +1,7 @@
 import pydantic
 
 from datetime import datetime, timezone
-from app.actions.core import AuthActionConfiguration, PullActionConfiguration, ExecutableActionMixin
+from app.actions.core import AuthActionConfiguration, PullActionConfiguration, InternalActionConfiguration, ExecutableActionMixin
 from app.services.errors import ConfigurationNotFound
 from app.services.utils import find_config_for_action, UIOptions, FieldWithUIOptions, GlobalUISchemaOptions
 
@@ -31,7 +31,7 @@ class PullObservationsConfig(PullActionConfiguration):
     )
 
 
-class PullFarmObservationsConfig(PullActionConfiguration):
+class PullFarmObservationsConfig(InternalActionConfiguration):
     start: datetime
     stop: datetime = pydantic.Field(default_factory=lambda: datetime.now(timezone.utc))
     farm_id: str
