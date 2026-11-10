@@ -2,6 +2,8 @@ import pytest
 
 from datetime import datetime, timezone
 from app.actions.configurations import PullFarmObservationsConfig
+from app.conftest import async_return
+from app.services.action_runner import execute_action
 from app.services.self_registration import register_integration_in_gundi
 
 
@@ -51,3 +53,33 @@ def test_fetch_farm_observations_config_treats_naive_start_as_utc():
     })
 
     assert parsed.start == datetime(2026, 11, 9, 19, 0, tzinfo=timezone.utc)
+
+
+@pytest.mark.asyncio
+async def test_triggered_fetch_farm_observations_runs_with_overrides_only(
+        mocker, integration_v2, mock_config_manager, mock_publish_event
+):
+    # The action has no stored configuration in Gundi; everything it needs
+    # arrives in config_overrides from pull_observations.
+    mock_config_manager.get_action_configuration.return_value = async_return(None)
+    mocker.patch("app.services.action_runner.config_manager", mock_config_manager)
+    mocker.patch("app.services.activity_logger.publish_event", mock_publish_event)
+    mocker.patch("app.services.action_runner.publish_event", mock_publish_event)
+    get_observations = mocker.patch("app.actions.client.get_farm_observations", return_value=None)
+    triggered = PullFarmObservationsConfig(
+        start="2026-11-09T19:00:00.000000Z",
+        farm_id="farm123",
+        farm_name="Test Farm",
+        user_id="user123",
+        token="testtoken",
+    )
+
+    result = await execute_action(
+        integration_id=str(integration_v2.id),
+        action_id="fetch_farm_observations",
+        config_overrides=triggered.dict(),
+    )
+
+    assert result == {"observations_extracted": 0}
+    get_observations.assert_called_once()
+    assert get_observations.call_args.args[2].farm_id == "farm123"
