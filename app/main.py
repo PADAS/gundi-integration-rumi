@@ -5,10 +5,12 @@ import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status, BackgroundTasks
 from fastapi.encoders import jsonable_encoder
-from fastapi.exceptions import RequestValidationError, HTTPException
-from fastapi.responses import JSONResponse
-from app.routers import actions, webhooks, config_events
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse, Response
+# app.settings first: the routers pull in gundi_client_v2, which loads a .env of
+# its own, and the first loader wins per key (see app/settings/base.py).
 import app.settings as settings
+from app.routers import actions, webhooks, config_events
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.services.action_runner import execute_action, _portal
@@ -79,20 +81,62 @@ async def execute(
     payload = base64.b64decode(json_data["message"]["data"]).decode("utf-8").strip()
     json_payload = json.loads(payload)
     logger.debug(f"JSON Payload: {json_payload}")
+    # `triggered_by` lets the portal mark how the run was initiated (e.g. a
+    # scheduled tick vs an operator's "Run now"). Absent the marker we default
+    # to automated, so scheduled pulls on destination-only integrations skip
+    # quietly instead of erroring.
+    #
+    # It is read from the PubSub message attributes as well as the body:
+    # gundi_core's RunIntegrationAction command has no `triggered_by` field, so
+    # a portal that serializes that model cannot put the marker in the payload
+    # and the MANUAL branch would never be reachable over PubSub.
+    triggered_by = json_payload.get("triggered_by") or (
+        json_data["message"].get("attributes") or {}
+    ).get("triggered_by")
     if settings.PROCESS_PUBSUB_MESSAGES_IN_BACKGROUND:
+        # Acked on receipt: whatever the run does afterwards, PubSub never
+        # hears of it, so a transient failure is not redelivered in this
+        # mode. Deployments that rely on redelivery (per-source fan-outs) keep
+        # the setting off.
         background_tasks.add_task(
             execute_action,
             integration_id=json_payload.get("integration_id"),
             action_id=json_payload.get("action_id"),
             config_overrides=json_payload.get("config_overrides"),
+            triggered_by=triggered_by,
         )
     else:
-        await execute_action(
+        result = await execute_action(
             integration_id=json_payload.get("integration_id"),
             action_id=json_payload.get("action_id"),
             config_overrides=json_payload.get("config_overrides"),
+            triggered_by=triggered_by,
         )
+        if _should_redeliver(result):
+            # Non-2xx: PubSub redelivers with backoff. Every other outcome is
+            # acked below, including failures a retry cannot fix (missing or
+            # invalid configuration, rejected credentials, a provider 4xx, a
+            # bug), which would otherwise be redelivered until they expire.
+            return result
     return {}
+
+
+def _should_redeliver(result) -> bool:
+    """True for an execute_action error response whose failure is transient.
+
+    Successful runs return the handler's own result (a dict), errors a
+    JSONResponse from _handle_error whose body carries the verdict
+    (`retryable`, from retry_policies.is_retryable_failure on the exception).
+    Only 5xx responses qualify: the runner answers 4xx for request and
+    configuration problems, which are final.
+    """
+    if not isinstance(result, Response) or result.status_code < 500:
+        return False
+    try:
+        detail = json.loads(result.body).get("detail") or {}
+    except (ValueError, AttributeError):
+        return False
+    return detail.get("retryable") is True
 
 
 @app.post(
@@ -111,10 +155,16 @@ async def push_data(
     logger.debug(f"Attributes: {attributes}")
     destination_id = attributes.get("destination_id")
     if not destination_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Missing required attribute: 'destination_id'"
+        # Ack malformed messages (2xx) — they can never succeed, so a non-2xx
+        # would only make PubSub redeliver them forever. Log attribute keys
+        # only; the values may carry sensitive data.
+        logger.error(
+            f"PubSub message missing required attribute 'destination_id'. "
+            f"Attribute keys: {sorted(attributes.keys())}"
         )
+        return {}
+    # Push data rides in the message itself, so execution errors must propagate
+    # (non-2xx) for PubSub to redeliver — acking a failed run would drop data.
     return await execute_action(
         integration_id=destination_id,
         data=json_payload,
@@ -134,13 +184,18 @@ app.include_router(
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-
-    logger.debug(
-        "Failed handling body: %s",
-        jsonable_encoder({"detail": exc.errors(), "body": exc.body}),
-    )
-
+    # The request body can carry draft credentials on the ephemeral path, so
+    # neither the response nor the log gets it: log access and retention are
+    # usually broader than access to the originating request. Keep only
+    # loc/msg/type per error. On the pinned pydantic 1.x, `ctx` can carry
+    # values from the offending input; `input` is dropped too so a pydantic 2
+    # upgrade, which mirrors the value there, does not reopen the leak.
+    safe_errors = [
+        {k: v for k, v in err.items() if k not in ("input", "ctx")}
+        for err in exc.errors()
+    ]
+    logger.debug("Failed handling body: %s", jsonable_encoder({"detail": safe_errors}))
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content=jsonable_encoder({"detail": exc.errors(), "body": exc.body}),
+        content=jsonable_encoder({"detail": safe_errors}),
     )
