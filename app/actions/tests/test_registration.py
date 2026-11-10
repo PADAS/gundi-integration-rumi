@@ -82,6 +82,9 @@ async def test_triggered_fetch_farm_observations_runs_with_overrides_only(
     )
 
     assert result == {"observations_extracted": 0}
+    # Internal actions have no stored configuration, so the runner must not
+    # look one up (a cache miss reloads the integration from Gundi).
+    mock_config_manager.get_action_configuration.assert_not_called()
     get_observations.assert_called_once()
     assert get_observations.call_args.args[2].farm_id == "farm123"
     assert get_observations.call_args.args[3].token.get_secret_value() == "testtoken"
