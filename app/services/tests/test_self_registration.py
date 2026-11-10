@@ -1,5 +1,9 @@
+import sys
+import types
+
 import pytest
 from fastapi.testclient import TestClient
+from app.actions import action_title, discover_actions, PullActionConfiguration
 from app.main import app
 from app.services.self_registration import register_integration_in_gundi
 from app.services.action_scheduler import crontab_schedule, CrontabSchedule
@@ -37,6 +41,16 @@ async def test_register_integration_with_slug_setting(
                         "title": "MockPullActionConfiguration",
                         "type": "object",
                         "properties": {
+                            "run_on_schedule": {
+                                "title": "Run On Schedule",
+                                "description": (
+                                    "When enabled, this action runs automatically on its configured "
+                                    "schedule. Turn it off to pause scheduled execution for this "
+                                    "integration without deleting the configuration."
+                                ),
+                                "default": True,
+                                "type": "boolean",
+                            },
                             "lookback_days": {
                                 "title": "Data lookback days",
                                 "description": "Number of days to look back for data.",
@@ -157,6 +171,16 @@ async def test_register_integration_with_slug_arg(
                         "title": "MockPullActionConfiguration",
                         "type": "object",
                         "properties": {
+                            "run_on_schedule": {
+                                "title": "Run On Schedule",
+                                "description": (
+                                    "When enabled, this action runs automatically on its configured "
+                                    "schedule. Turn it off to pause scheduled execution for this "
+                                    "integration without deleting the configuration."
+                                ),
+                                "default": True,
+                                "type": "boolean",
+                            },
                             "lookback_days": {
                                 "title": "Data lookback days",
                                 "description": "Number of days to look back for data.",
@@ -278,6 +302,16 @@ async def test_register_integration_with_service_url_arg(
                         "title": "MockPullActionConfiguration",
                         "type": "object",
                         "properties": {
+                            "run_on_schedule": {
+                                "title": "Run On Schedule",
+                                "description": (
+                                    "When enabled, this action runs automatically on its configured "
+                                    "schedule. Turn it off to pause scheduled execution for this "
+                                    "integration without deleting the configuration."
+                                ),
+                                "default": True,
+                                "type": "boolean",
+                            },
                             "lookback_days": {
                                 "title": "Data lookback days",
                                 "description": "Number of days to look back for data.",
@@ -402,6 +436,16 @@ async def test_register_integration_with_service_url_setting(
                         "title": "MockPullActionConfiguration",
                         "type": "object",
                         "properties": {
+                            "run_on_schedule": {
+                                "title": "Run On Schedule",
+                                "description": (
+                                    "When enabled, this action runs automatically on its configured "
+                                    "schedule. Turn it off to pause scheduled execution for this "
+                                    "integration without deleting the configuration."
+                                ),
+                                "default": True,
+                                "type": "boolean",
+                            },
                             "lookback_days": {
                                 "title": "Data lookback days",
                                 "description": "Number of days to look back for data.",
@@ -577,6 +621,149 @@ async def test_register_integration_with_executable_action(
 
 
 @pytest.mark.asyncio
+async def test_register_integration_with_type_name_arg(
+    mocker,
+    mock_gundi_client_v2,
+    mock_action_handlers,
+    mock_get_webhook_handler_for_fixed_json_payload,
+):
+    mocker.patch("app.services.self_registration.action_handlers", mock_action_handlers)
+    mocker.patch(
+        "app.services.self_registration.get_webhook_handler",
+        mock_get_webhook_handler_for_fixed_json_payload,
+    )
+    await register_integration_in_gundi(
+        gundi_client=mock_gundi_client_v2,
+        type_slug="savannahtracking",
+        type_name="Savannah Tracking",
+    )
+    assert mock_gundi_client_v2.register_integration_type.called
+    data = mock_gundi_client_v2.register_integration_type.call_args.args[0]
+    assert data["name"] == "Savannah Tracking"
+    assert data["value"] == "savannahtracking"
+    assert data["description"] == "Default type for integrations with Savannah Tracking"
+    pull_action = next(a for a in data["actions"] if a["value"] == "pull_observations")
+    assert pull_action["description"] == "Savannah Tracking Pull Observations action"
+    assert data["webhook"]["name"] == "Savannah Tracking Webhook"
+    assert data["webhook"]["description"] == "Webhook Integration with Savannah Tracking"
+
+
+@pytest.mark.asyncio
+async def test_register_integration_with_type_name_setting(
+    mocker,
+    mock_gundi_client_v2,
+    mock_action_handlers,
+    mock_get_webhook_handler_for_fixed_json_payload,
+):
+    mocker.patch("app.services.self_registration.INTEGRATION_TYPE_SLUG", "savannahtracking")
+    mocker.patch("app.services.self_registration.INTEGRATION_TYPE_NAME", "Savannah Tracking")
+    mocker.patch("app.services.self_registration.action_handlers", mock_action_handlers)
+    mocker.patch(
+        "app.services.self_registration.get_webhook_handler",
+        mock_get_webhook_handler_for_fixed_json_payload,
+    )
+    await register_integration_in_gundi(gundi_client=mock_gundi_client_v2)
+    assert mock_gundi_client_v2.register_integration_type.called
+    data = mock_gundi_client_v2.register_integration_type.call_args.args[0]
+    assert data["name"] == "Savannah Tracking"
+    assert data["value"] == "savannahtracking"
+
+
+@pytest.mark.asyncio
+async def test_register_integration_with_action_title(
+    mocker,
+    mock_gundi_client_v2,
+    mock_action_handlers,
+    mock_get_webhook_handler_for_fixed_json_payload,
+):
+    mocker.patch("app.services.self_registration.INTEGRATION_TYPE_SLUG", "x_tracker")
+    mock_action_handlers["pull_observations"][0].action_title = "Fetch Collar Positions"
+    mocker.patch("app.services.self_registration.action_handlers", mock_action_handlers)
+    mocker.patch(
+        "app.services.self_registration.get_webhook_handler",
+        mock_get_webhook_handler_for_fixed_json_payload,
+    )
+    await register_integration_in_gundi(gundi_client=mock_gundi_client_v2)
+    assert mock_gundi_client_v2.register_integration_type.called
+    data = mock_gundi_client_v2.register_integration_type.call_args.args[0]
+    pull_action = next(a for a in data["actions"] if a["value"] == "pull_observations")
+    assert pull_action["name"] == "Fetch Collar Positions"
+    assert pull_action["description"] == "X Tracker Fetch Collar Positions action"
+    # Actions without a custom title keep the name derived from the action id
+    push_action = next(a for a in data["actions"] if a["value"] == "push_observations")
+    assert push_action["name"] == "Push Observations"
+
+
+def test_action_title_decorator():
+
+    @action_title("Fetch Collar Positions")
+    async def action_pull_observations(integration, action_config):
+        return {"observations_extracted": 10}
+
+    assert action_pull_observations.action_title == "Fetch Collar Positions"
+
+
+def test_action_title_decorator_stacks_with_crontab_schedule():
+
+    @action_title("Fetch Collar Positions")
+    @crontab_schedule("*/10 * * * *")
+    async def action_pull_observations(integration, action_config):
+        return {"observations_extracted": 10}
+
+    assert action_pull_observations.action_title == "Fetch Collar Positions"
+    assert action_pull_observations.crontab_schedule == CrontabSchedule.parse_obj_from_crontab("*/10 * * * *")
+
+
+def _discover_actions_in_fake_module(module):
+    module_name = "fake_handlers_module"
+    previous = sys.modules.get(module_name)
+    sys.modules[module_name] = module
+    try:
+        return discover_actions(module_name=module_name, prefix="action_")
+    finally:
+        if previous is not None:
+            sys.modules[module_name] = previous
+        else:
+            del sys.modules[module_name]
+
+
+def test_discover_actions_ignores_imported_action_title_decorator():
+    # Simulates handlers.py doing `from app.actions import action_title`
+    module = types.ModuleType("fake_handlers_module")
+    module.action_title = action_title
+
+    @action_title("Fetch Collar Positions")
+    async def action_pull_observations(integration, action_config: PullActionConfiguration):
+        return {"observations_extracted": 10}
+
+    module.action_pull_observations = action_pull_observations
+
+    handlers = _discover_actions_in_fake_module(module)
+
+    assert "title" not in handlers
+    assert list(handlers.keys()) == ["pull_observations"]
+    assert handlers["pull_observations"][0] is action_pull_observations
+
+
+def test_discover_actions_ignores_functions_without_action_config():
+    module = types.ModuleType("fake_handlers_module")
+
+    def action_helper(value):
+        return value
+
+    async def action_pull_observations(integration, action_config: PullActionConfiguration):
+        return {"observations_extracted": 10}
+
+    module.action_helper = action_helper
+    module.action_pull_observations = action_pull_observations
+
+    handlers = _discover_actions_in_fake_module(module)
+
+    assert "helper" not in handlers
+    assert list(handlers.keys()) == ["pull_observations"]
+
+
+@pytest.mark.asyncio
 async def test_crontab_schedule_decorator(
         mocker, mock_publish_event, integration_v2, pull_observations_config
 ):
@@ -597,3 +784,129 @@ async def test_crontab_schedule_decorator(
         tz_offset=0
     )
     assert action_pull_observations.crontab_schedule == expected_schedule
+
+
+def test_action_type_enum_has_reference():
+    from app.services.core import ActionTypeEnum
+
+    assert ActionTypeEnum.REFERENCE.value == "reference"
+
+
+def _dummy_reference_handlers():
+    from app.actions.core import ReferenceActionConfiguration
+
+    class DummyQuery(ReferenceActionConfiguration):
+        pass
+
+    async def action_list_dummy(integration, action_config: DummyQuery):
+        return {"options": []}
+
+    return {"list_dummy": (action_list_dummy, DummyQuery, None)}
+
+
+@pytest.mark.asyncio
+async def test_reference_actions_are_registered_with_the_reference_type(mocker):
+    # The platform accepts the "reference" action type, so reference actions
+    # always register, and with their own type rather than "generic" (which
+    # the runner's ephemeral whitelist would otherwise be the only guard for).
+    from unittest.mock import AsyncMock, MagicMock
+    from app.services import self_registration
+
+    mocker.patch.object(self_registration, "action_handlers", _dummy_reference_handlers())
+    gundi_client = MagicMock()
+    gundi_client.register_integration_type = AsyncMock(return_value={})
+
+    await self_registration.register_integration_in_gundi(gundi_client, type_slug="my_tracker")
+
+    data = gundi_client.register_integration_type.call_args.args[0]
+    assert [a["value"] for a in data["actions"]] == ["list_dummy"]
+    assert data["actions"][0]["type"] == "reference"
+    assert data["actions"][0]["is_periodic_action"] is False
+
+
+@pytest.mark.asyncio
+async def test_register_integration_with_description_arg(
+    mocker,
+    mock_gundi_client_v2,
+    mock_action_handlers,
+    mock_get_webhook_handler_for_fixed_json_payload,
+):
+    mocker.patch("app.services.self_registration.INTEGRATION_TYPE_SLUG", "x_tracker")
+    mocker.patch("app.services.self_registration.action_handlers", mock_action_handlers)
+    mocker.patch(
+        "app.services.self_registration.get_webhook_handler",
+        mock_get_webhook_handler_for_fixed_json_payload,
+    )
+    description = "X Tracker collars, via the X Tracker cloud API"
+    await register_integration_in_gundi(
+        gundi_client=mock_gundi_client_v2, type_description=description
+    )
+    registered = mock_gundi_client_v2.register_integration_type.call_args[0][0]
+    assert registered["description"] == description
+
+
+@pytest.mark.asyncio
+async def test_register_integration_with_description_setting(
+    mocker,
+    mock_gundi_client_v2,
+    mock_action_handlers,
+    mock_get_webhook_handler_for_fixed_json_payload,
+):
+    mocker.patch("app.services.self_registration.INTEGRATION_TYPE_SLUG", "x_tracker")
+    mocker.patch(
+        "app.services.self_registration.INTEGRATION_TYPE_DESCRIPTION",
+        "X Tracker collars, from the setting",
+    )
+    mocker.patch("app.services.self_registration.action_handlers", mock_action_handlers)
+    mocker.patch(
+        "app.services.self_registration.get_webhook_handler",
+        mock_get_webhook_handler_for_fixed_json_payload,
+    )
+    await register_integration_in_gundi(gundi_client=mock_gundi_client_v2)
+    registered = mock_gundi_client_v2.register_integration_type.call_args[0][0]
+    assert registered["description"] == "X Tracker collars, from the setting"
+
+
+@pytest.mark.asyncio
+async def test_register_integration_description_arg_wins_over_setting(
+    mocker,
+    mock_gundi_client_v2,
+    mock_action_handlers,
+    mock_get_webhook_handler_for_fixed_json_payload,
+):
+    mocker.patch("app.services.self_registration.INTEGRATION_TYPE_SLUG", "x_tracker")
+    mocker.patch("app.services.self_registration.INTEGRATION_TYPE_DESCRIPTION", "from the setting")
+    mocker.patch("app.services.self_registration.action_handlers", mock_action_handlers)
+    mocker.patch(
+        "app.services.self_registration.get_webhook_handler",
+        mock_get_webhook_handler_for_fixed_json_payload,
+    )
+    await register_integration_in_gundi(gundi_client=mock_gundi_client_v2, type_description="from the arg")
+    registered = mock_gundi_client_v2.register_integration_type.call_args[0][0]
+    assert registered["description"] == "from the arg"
+
+
+def test_register_cli_passes_the_description_through(mocker):
+    # The CLI threads --description into register_integration_in_gundi by
+    # keyword: a reordered option or a renamed kwarg would still import and
+    # silently register the default text, which is what the option exists to
+    # replace.
+    from unittest.mock import AsyncMock
+
+    from click.testing import CliRunner
+
+    from app.register import register_integration
+
+    registration = mocker.patch(
+        "app.register.register_integration_in_gundi", new_callable=AsyncMock
+    )
+    result = CliRunner().invoke(
+        register_integration,
+        ["--slug", "x_tracker", "--description", "X Tracker collars, via the X Tracker cloud API"],
+    )
+    assert result.exit_code == 0, result.output
+    registration.assert_awaited_once()
+    kwargs = registration.await_args.kwargs
+    assert kwargs["type_slug"] == "x_tracker"
+    assert kwargs["type_name"] is None
+    assert kwargs["type_description"] == "X Tracker collars, via the X Tracker cloud API"

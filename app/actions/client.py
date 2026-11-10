@@ -5,6 +5,7 @@ import stamina
 
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from app.services.errors import IntegrationAuthError, IntegrationBadResponseError
 from app.services.state import IntegrationStateManager
 
 
@@ -43,20 +44,18 @@ class FarmLocation(pydantic.BaseModel):
         allow_population_by_field_name = True
 
 
-class RumiNotFoundException(Exception):
+class RumiNotFoundException(IntegrationBadResponseError):
     def __init__(self, error: Exception, message: str, status_code=404):
-        self.status_code = status_code
-        self.message = message
         self.error = error
-        super().__init__(f"'{self.status_code}: {self.message}, Error: {self.error}'")
+        super().__init__(f"'{status_code}: {message}, Error: {error}'", status_code=status_code)
+        self.message = message
 
 
-class RumiUnauthorizedException(Exception):
+class RumiUnauthorizedException(IntegrationAuthError):
     def __init__(self, error: Exception, message: str, status_code=401):
-        self.status_code = status_code
-        self.message = message
         self.error = error
-        super().__init__(f"'{self.status_code}: {self.message}, Error: {self.error}'")
+        super().__init__(f"'{status_code}: {message}, Error: {error}'", status_code=status_code)
+        self.message = message
 
 
 @stamina.retry(on=httpx.HTTPError, wait_initial=4.0, wait_jitter=5.0, wait_max=32.0)

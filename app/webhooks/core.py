@@ -56,7 +56,7 @@ class GenericJsonTransformConfig(JQTransformConfig, DynamicSchemaConfig):
         None,
         description=(
             "Optional output type for transformed records when a global type should be applied: "
-            "'obv' (observations) or 'event' (events). If omitted, no default output type is applied. "
+            "'obv' (observations) or 'ev' (events). If omitted, no default output type is applied. "
             "Individual records can override this with a '__gundi_output_type' field."
         ),
         ui_options=UIOptions(

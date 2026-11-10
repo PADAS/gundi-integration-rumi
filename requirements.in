@@ -1,1 +1,3 @@
 # Add your integration-specific dependencies here
+# used by app/actions/tests/test_handlers.py; gundi-client-v2 3.x no longer pulls it in; 0.22 is the first release that works with httpx 0.28
+respx~=0.22.0
