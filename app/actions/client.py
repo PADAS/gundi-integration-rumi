@@ -87,7 +87,7 @@ _TIMELAPSE_MAX_WINDOW = timedelta(hours=48)
 
 
 @stamina.retry(on=httpx.HTTPError, wait_initial=4.0, wait_jitter=5.0, wait_max=32.0)
-async def get_farm_observations(integration, base_url, config):
+async def get_farm_observations(integration, base_url, config, auth):
     async with httpx.AsyncClient(timeout=120) as session:
         all_observations = []
         chunk_start = config.start
@@ -107,7 +107,7 @@ async def get_farm_observations(integration, base_url, config):
             )
 
             try:
-                response = await session.get(url, params=params, headers={"Authorization": f"Token {config.token}"})
+                response = await session.get(url, params=params, headers={"Authorization": f"Token {auth.token.get_secret_value()}"})
                 if response.is_error:
                     logger.warning(f"Error 'get_farm_observations'. Response body: {response.text}")
                 response.raise_for_status()
@@ -134,7 +134,7 @@ async def get_farm_observations(integration, base_url, config):
 
 
 @stamina.retry(on=httpx.HTTPError, wait_initial=4.0, wait_jitter=5.0, wait_max=32.0)
-async def get_animals_info(integration, base_url, config):
+async def get_animals_info(integration, base_url, config, auth):
     animals_dict = {}
     async with httpx.AsyncClient(timeout=120) as session:
         try:
@@ -146,7 +146,7 @@ async def get_animals_info(integration, base_url, config):
 
             logger.info(f"-- Getting bulls info for integration ID: {integration.id} Farm: {config.farm_id} --")
 
-            bulls_response = await session.get(bulls_url, params=params, headers={"Authorization": f"Token {config.token}"})
+            bulls_response = await session.get(bulls_url, params=params, headers={"Authorization": f"Token {auth.token.get_secret_value()}"})
             if bulls_response.is_error:
                 logger.warning(f"Error in bulls 'get_animals_info'. Response body: {bulls_response.text}")
             bulls_response.raise_for_status()
@@ -158,7 +158,7 @@ async def get_animals_info(integration, base_url, config):
 
             logger.info(f"-- Getting cows info for integration ID: {integration.id} Farm: {config.farm_id} --")
 
-            cows_response = await session.get(cows_url, params=params, headers={"Authorization": f"Token {config.token}"})
+            cows_response = await session.get(cows_url, params=params, headers={"Authorization": f"Token {auth.token.get_secret_value()}"})
             if cows_response.is_error:
                 logger.warning(f"Error in cows 'get_animals_info'. Response body: {cows_response.text}")
             cows_response.raise_for_status()
@@ -170,7 +170,7 @@ async def get_animals_info(integration, base_url, config):
 
             logger.info(f"-- Getting calves info for integration ID: {integration.id} Farm: {config.farm_id} --")
 
-            calves_response = await session.get(calves_url, params=params, headers={"Authorization": f"Token {config.token}"})
+            calves_response = await session.get(calves_url, params=params, headers={"Authorization": f"Token {auth.token.get_secret_value()}"})
             if calves_response.is_error:
                 logger.warning(f"Error in calves 'get_animals_info'. Response body: {calves_response.text}")
             calves_response.raise_for_status()
